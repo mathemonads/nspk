@@ -1,0 +1,223 @@
+
+sload ext-prelude
+
+fmod STATE is
+	sort State .
+	ops ready idle waiting receiving conn : -> State .
+	ops eavesdropping intercepting : -> State .
+endfm
+
+omod OCONFIGURATION is
+	protecting CONFIGURATION .
+	sorts OidConfiguration ObjectConfiguration MsgConfiguration .
+	subsort ObjectConfiguration MsgConfiguration < Configuration .
+	subsort Oid < OidConfiguration .
+	op none : -> OidConfiguration .
+	op _ _ : OidConfiguration OidConfiguration -> OidConfiguration [assoc comm idem id: none] .
+	
+	var o : OidConfiguration .
+endom
+
+omod MAYBE is
+	protecting Maybe{Msg} * (sort Maybe{Msg} to Msg?) .
+	protecting Maybe{Oid} * (sort Maybe{Oid} to Oid?, op nothing to nobody) .
+endom
+
+omod PRINCIPAL is
+	protecting NAT .
+	protecting STRING .
+	protecting STATE .
+	protecting OCONFIGURATION * (sort OidConfiguration to Oids).
+	protecting MAYBE .
+	protecting MAP{Oid, String} * (sort Map{Oid, String} to Peers).
+	
+	sorts Nonce Key .
+	subsort String < Oid .
+	subsort Nat < Nonce .
+
+	class Principal |
+		state : State,
+		nonce : Nonce,
+		s : Key,
+		attack : Oid?,
+		msg : Msg?, 
+		peers : Peers .
+
+	op k : Oid -> Key [ctor] .
+	op s : Oid -> Key [ctor] .
+endom
+
+omod MSG is
+	protecting PRINCIPAL .
+	sorts Payload D1 D2 . 
+	subsort Nonce < D1 .
+	subsort Nonce < D2 .
+	subsort D1 D2 < Payload .
+	op _:_ : Oid Nonce -> D1 [ctor] .
+	op _:_ : Nonce Nonce -> D1 [ctor] .
+	op from_to_:_ : Oid? Oid? Payload -> Msg .
+	msg to_:_ : Oid Payload -> Msg .
+	op enc : D1 Key -> D2 [ctor] .
+	op dec : D2 Key -> D1 [ctor] .
+
+	var d : D1 . 
+	var P : Payload .
+	vars A B : Oid .
+	eq dec(enc(d, k(A)), s(A)) = d .
+endom
+
+omod NSPK is
+	protecting MSG .
+	vars A B sender : Oid? .
+	vars sA kA kB sB : Key .
+	var nA nB : Nonce .
+	var oids : Oids .
+	var msg : Msg .
+	var p : Peers .
+
+	op payload : Msg -> Payload .
+	op src : Msg -> Oid .
+	op unsigned : Msg -> Msg .
+	var P : Payload .
+	eq src((to B : enc(A : nA, kB))) = A .
+	eq src(from sender to B : enc(A : nA, kB)) = sender .
+	eq payload(to B : P) = P .
+	eq payload(from A to B : P) = P .
+	eq unsigned(to B : P) = (to B : P) .
+	eq unsigned(from A to B : P) = (to B : P) .
+	
+	rl [nspk/conn] :
+		< A : Principal | state : ready, nonce : nA, s : sA, peers : (p, B |-> "init") >
+	=>	< A : Principal | state : waiting, nonce : nA, peers : (p, B |-> "challenge") >
+		(from A to B : enc(A : nA, k(B)))
+	[print A "\n [nspk/conn] " nA ] .
+
+	rl [nspk/ack] :
+		< A : Principal | state : waiting, peers : (p, B |-> "challenge") >
+		(from sender to A : enc(nA : nB, k(A))) 
+	=>	< A : Principal | state : conn, peers : (p, B |-> "trust" ) >
+		(from A to sender : enc(nB, k(B)))
+	[print A "\n [nspk/ack] " sender ] . 
+
+	var C : Oid .
+	rl [nspk/auth] :
+		< B : Principal | state : waiting, peers : (p, C |-> "challenge") >
+		(from A to B : enc(nB, k(B)))
+	=>	< B : Principal | state : conn, peers : (p, C |-> "trust") > 
+	[print B "\n [nspk/auth] " A ] . 
+endom
+
+omod NSPK-UNSIGNED is
+	protecting NSPK .
+	var B A sender : Oid .
+	var nB nA : Nonce .
+	var sB kB : Key .
+	var oids : Oids .
+	var P : Payload .
+	var msg : Msg .
+	var p : Peers .
+
+	rl [nspk/connack-unsigned] :
+		< B : Principal | state : idle, nonce : nB, s : sB, peers : p > 
+		(from sender to B : enc(A : nA, kB))
+	=>	< B : Principal | state : waiting, nonce : nB, peers : (p, A |-> "challenge") >
+		(from B to sender : enc(nA : nB, k(A)))
+	[print B "\n [nspk/connack-unsigned] conn to " A ] .
+
+	*** rl [unsign] : (from A to B : P) => (from nobody to B : P) .
+endom
+
+omod NSPK-SIGNED is
+	protecting NSPK .
+	var B A sender : Oid .
+	var nB nA : Nonce .
+	var sB kB : Key .
+	var oids : Oids .
+	var p : Peers .
+
+	rl [nspk/connack-signed] :
+		< B : Principal | state : idle, nonce : nB, s : sB, peers : p > 
+		(from sender to B : enc(A : nA, kB))
+	=>	< B : Principal | state : waiting, nonce : nB, peers : (p, sender |-> "challenge") >
+		(from B to sender : enc(nA : nB, k(sender)))
+	[print B "\n [nspk/connack-signed] conn to " sender ] .
+endom
+
+omod INTRUDER is
+	protecting MSG .
+	vars B A E : Oid . var sender : Oid? .
+	var nA nB nE : Nonce .
+	var kB kE : Key .
+	var M : Msg? .
+	var oids : Oids .
+	var p : Peers .
+	
+	eq
+		< E : Principal | state : eavesdropping, msg : M, attack : A >
+		(from sender to B : enc(A : nA, kB))
+	=	< E : Principal | state : intercepting, msg : (from A to B : enc(A : nA, kB)), attack : A > 
+	[print E "\n [intruder/intercept] " ] .
+
+	eq	< E : Principal | state : intercepting, nonce : nE, msg : (from A to B : enc(A : nA, kB)), peers : p >
+	=  	< E : Principal | state : waiting, nonce : nE, msg : nothing, peers : (p, B |-> "challenge") >
+		(from E to B : enc(A : nE, kB)) 
+	[print E "\n [intruder/forge] " ] .
+
+	eq	< E : Principal | state : waiting, nonce : nE, msg : nothing, attack : A, peers : (p, B |-> "challenge") >
+		(from B to E : enc(nA : nB, k(A))) 
+	=	< E : Principal | state : waiting, peers : (p, A |-> "spoofed", B |-> "forwarding") >
+		(from E to A : enc(nA : nB, k(A))) 
+	[print E "\n [intruder/forward] " A ] .
+
+	eq	< E : Principal | state : waiting, attack : A, peers : (p, B |-> "forwarding") >
+		(from A to E : enc(nB, k(B)))
+	=	< E : Principal | state : waiting, attack : A, peers : (p, B |-> "spoofed") >
+		(from E to B : enc(nB, k(B)))
+	[print E "\n [intruder/spoof] " B ] .
+endom
+
+omod EXAMPLE is
+	ops b a e : -> Oid .
+endom
+
+omod EXAMPLE-SIGNED is
+	protecting NSPK-SIGNED .
+	protecting EXAMPLE .
+endom
+
+omod EXAMPLE-UNSIGNED is
+	protecting NSPK-UNSIGNED .
+	protecting EXAMPLE .
+endom
+
+omod ATTACK-UNSIGNED is
+	protecting EXAMPLE-UNSIGNED .
+	protecting INTRUDER .
+endom
+
+omod ATTACK-SIGNED is
+	protecting EXAMPLE-SIGNED .
+	protecting INTRUDER .
+endom
+
+set print attribute on .
+
+rew in EXAMPLE-UNSIGNED :
+ 	< b : Principal | state : idle, nonce : 1, s : s(b), peers : empty >  
+	< a : Principal | state : ready, nonce : 0, s : s(a), peers : (b |-> "init") > . 
+
+rew in EXAMPLE-SIGNED :
+ 	< b : Principal | state : idle, nonce : 1, s : s(b), peers : empty >  
+	< a : Principal | state : ready, nonce : 0, s : s(a), peers : (b |-> "init")> . 
+
+rew in ATTACK-UNSIGNED :
+	< b : Principal | state : idle, nonce : 1, s : s(b), peers : empty >  
+	< a : Principal | state : ready, nonce : 0, s : s(a), peers : (b |-> "init") > 
+	< e : Principal | state : eavesdropping, nonce : 2, s : s(e), msg : nothing, attack : a, peers : empty > .
+
+rew in ATTACK-SIGNED :
+	< b : Principal | state : idle, nonce : 1, s : s(b), peers : empty >  
+	< a : Principal | state : ready, nonce : 0, s : s(a), peers : (b |-> "init") > 
+	< e : Principal | state : eavesdropping, nonce : 2, s : s(e), msg : nothing, attack : a, peers : empty > .
+
+quit

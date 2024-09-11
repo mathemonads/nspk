@@ -1,0 +1,17 @@
+
+fmod Maybe{X :: TRIV} is
+	sort Maybe{X} .
+	subsort X$Elt < Maybe{X} .
+
+	op nothing : -> Maybe{X} [ctor] .
+	op maybe : -> Maybe{X} [ctor] .
+endfm
+
+view Oid from TRIV to CONFIGURATION is
+	sort Elt to Oid .
+endv
+
+view Msg from TRIV to CONFIGURATION is
+	sort Elt to Msg .
+endv
+

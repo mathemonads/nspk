@@ -1,0 +1,88 @@
+		     \||||||||||||||||||/
+		   --- Welcome to Maude ---
+		     /||||||||||||||||||\
+	     Maude 3.4 built: Mar 15 2024 20:07:12
+	     Copyright 1997-2024 SRI International
+		   Wed Sep 11 00:23:04 2024
+==========================================
+rewrite in EXAMPLE-UNSIGNED : < b : Principal | state : idle, nonce : 1, s : s(
+    b), peers : empty > < a : Principal | state : ready, nonce : 0, s : s(a),
+    peers : b |-> "init" > .
+a
+ [nspk/conn] 0
+b
+ [nspk/connack-unsigned] conn to a
+a
+ [nspk/ack] b
+b
+ [nspk/auth] a
+rewrites: 4 in 0ms cpu (0ms real) (~ rewrites/second)
+result Configuration: < b : Principal | state : conn, nonce : 1, s : s(b),
+    peers : a |-> "trust" > < a : Principal | state : conn, nonce : 0, s : s(
+    a), peers : b |-> "trust" >
+==========================================
+rewrite in EXAMPLE-SIGNED : < b : Principal | state : idle, nonce : 1, s : s(
+    b), peers : empty > < a : Principal | state : ready, nonce : 0, s : s(a),
+    peers : b |-> "init" > .
+a
+ [nspk/conn] 0
+b
+ [nspk/connack-signed] conn to a
+a
+ [nspk/ack] b
+b
+ [nspk/auth] a
+rewrites: 4 in 0ms cpu (0ms real) (~ rewrites/second)
+result Configuration: < b : Principal | state : conn, nonce : 1, s : s(b),
+    peers : a |-> "trust" > < a : Principal | state : conn, nonce : 0, s : s(
+    a), peers : b |-> "trust" >
+==========================================
+rewrite in ATTACK-UNSIGNED : (< a : Principal | state : ready, nonce : 0, s :
+    s(a), peers : b |-> "init" > < e : Principal | state : eavesdropping, nonce
+    : 2, s : s(e), msg : nothing, attack : a, peers : empty >) < b : Principal
+    | state : idle, nonce : 1, s : s(b), peers : empty > .
+a
+ [nspk/conn] 0
+e
+ [intruder/intercept] 
+e
+ [intruder/forge] 
+b
+ [nspk/connack-unsigned] conn to a
+e
+ [intruder/forward] a
+a
+ [nspk/ack] e
+e
+ [intruder/spoof] b
+b
+ [nspk/auth] e
+rewrites: 8 in 0ms cpu (0ms real) (~ rewrites/second)
+result Configuration: < b : Principal | state : conn, nonce : 1, s : s(b),
+    peers : a |-> "trust" > < a : Principal | state : conn, nonce : 0, s : s(
+    a), peers : b |-> "trust" > < e : Principal | state : waiting, nonce : 2, s
+    : s(e), attack : a, msg : nothing, peers : (b |-> "spoofed", a |->
+    "spoofed") >
+==========================================
+rewrite in ATTACK-SIGNED : (< a : Principal | state : ready, nonce : 0, s : s(
+    a), peers : b |-> "init" > < e : Principal | state : eavesdropping, nonce :
+    2, s : s(e), msg : nothing, attack : a, peers : empty >) < b : Principal |
+    state : idle, nonce : 1, s : s(b), peers : empty > .
+a
+ [nspk/conn] 0
+e
+ [intruder/intercept] 
+e
+ [intruder/forge] 
+b
+ [nspk/connack-signed] conn to e
+e
+ [nspk/ack] b
+b
+ [nspk/auth] e
+rewrites: 6 in 0ms cpu (0ms real) (~ rewrites/second)
+result Configuration: < b : Principal | state : conn, nonce : 1, s : s(b),
+    peers : e |-> "trust" > < a : Principal | state : waiting, nonce : 0, s :
+    s(a), peers : b |-> "challenge" > < e : Principal | state : conn, nonce :
+    2, s : s(e), attack : a, msg : nothing, peers : b |-> "trust" >
+Bye.
